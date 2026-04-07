@@ -103,18 +103,23 @@ control MyIngress(inout headers hdr,
     action forward_to_port(bit<9> egress_port, macAddr_t egress_mac) {
         /* TODO: change the packet's source MAC address to egress_mac */
         /* Then set the egress_spec in the packet's standard_metadata to egress_port */
+        hdr.ethernet.srcAddr = egress_mac;
+        standard_metadata.egress_spec = egress_port;
     }
    
     action decrement_ttl() {
         /* TODO: decrement the IPv4 header's TTL field by one */
+        hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
     }
 
     action forward_to_next_hop(ipAddr_t next_hop){
         /* TODO: write next_hop to metadata's next_hop field */
+        meta.next_hop = next_hop;
     }
 
     action change_dst_mac (macAddr_t dst_mac) {
         /* TODO: change a packet's destination MAC address to dst_mac*/
+        hdr.ethernet.dstAddr = dst_mac;
     }
 
     /* define routing table */
@@ -122,6 +127,14 @@ control MyIngress(inout headers hdr,
         /* TODO: define a static ipv4 routing table */
         /* Perform longest prefix matching on dstIP then */
         /* record the next hop IP address in the metadata's next_hop field*/
+        key = {
+            hdr.ipv4.dstAddr: lpm;
+        }
+        actions = {
+            forward_to_next_hop;
+            drop;
+        }
+        default_action = drop();
     }
 
     /* define static ARP table */
@@ -129,6 +142,14 @@ control MyIngress(inout headers hdr,
         /* TODO: define a static ARP table */
         /* Perform exact matching on metadata's next_hop field then */
         /* modify the packet's src and dst MAC addresses upon match */
+        key = {
+            meta.next_hop: exact;
+        }
+        actions = {
+            change_dst_mac;
+            drop;
+        }
+        default_action = drop();
     }
 
 
@@ -137,6 +158,14 @@ control MyIngress(inout headers hdr,
         /* TODO: define a static forwarding table */
         /* Perform exact matching on dstMAC then */
         /* forward to the corresponding egress port */ 
+        key = {
+            hdr.ethernet.dstAddr: exact;
+        }
+        actions = {
+            forward_to_port;
+            drop;
+        }
+        default_action = drop();
     }
    
     /* applying dmac */
@@ -146,6 +175,14 @@ control MyIngress(inout headers hdr,
         /* 2. Upon hit, lookup ARP table */
         /* 3. Upon hit, Decrement ttl */
         /* 4. Then lookup forwarding table */  
+        if (hdr.ipv4.isValid()) {
+            if (ipv4_route.apply().hit) {
+                if (arp_table.apply().hit) {
+                    decrement_ttl();
+                    dmac_forward.apply();
+                }
+            }
+        }
     }
 }
 
